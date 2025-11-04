@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Reading Assessment App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-500 to-purple-600 min-h-screen p-3">
+    <div id="app" class="max-w-4xl mx-auto"></div>
+
+    <script>
+        // ========== STATE ==========
+        let state = {
+            studentName: '',
+            studentClass: '',
+            difficultyLevel: '',
+            showForm: true,
+            currentMission: 0,
+            missionScores: Array(7).fill(null),
+            showFinalScore: false,
+            isSpeaking: false,
+            isRecording: false,
+            transcript: '',
+            showResult: false,
+            recognition: null,
+            errorMessage: ''
+        };
+
+        // ========== MISSIONS PER LEVEL ==========
+        const missionSets = {
+            beginner: [
+                "My name is Anna and I love reading books",
+                "I go to school every morning at seven o’clock",
+                "The sun is bright and the sky is blue",
+                "I have a cat and its name is Luna",
+                "We play football every weekend at the park",
+                "I like eating rice and chicken for lunch",
+                "My favorite color is green and I like drawing"
+            ],
+            intermediate: [
+                "Last weekend, I visited my grandmother in the countryside",
+                "The weather was nice so we had a picnic near the river",
+                "I helped her water the plants and feed the chickens",
+                "At night, we watched the stars together in the clear sky",
+                "The next day, I read a storybook before going home",
+                "I really enjoyed spending time with my family there",
+                "It was a wonderful and peaceful weekend"
+            ],
+            advanced: [
+                "During our holiday, we climbed the mountain before sunrise",
+                "The cold air and the view from the top were unforgettable",
+                "I took many photos and shared them with my friends online",
+                "After the long hike, we set up a tent near the waterfall",
+                "We cooked dinner using a small portable stove",
+                "At night, we sang songs and told stories around the campfire",
+                "That adventure taught me to appreciate nature more deeply"
+            ],
+            expert: [
+                "Exploring different cultures allows us to understand humanity’s diversity",
+                "Communication becomes meaningful when we listen with empathy",
+                "Travelling abroad challenges our comfort zones and broadens our minds",
+                "Learning new languages opens doors to endless opportunities",
+                "Perseverance and curiosity are keys to lifelong success",
+                "Globalization has made the world more connected than ever before",
+                "We must embrace innovation while preserving cultural heritage"
+            ]
+        };
+
+        let missions = [];
+
+        // ========== INITIALIZE SPEECH RECOGNITION ==========
+        function initializeSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+                state.errorMessage = '❌ Browser tidak mendukung Speech Recognition. Gunakan Chrome!';
+                return false;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                state.isRecording = true;
+                state.errorMessage = '';
+                render();
+            };
+
+            recognition.onresult = (event) => {
+                const spokenText = event.results[0][0].transcript;
+                state.transcript = spokenText;
+                state.isRecording = false;
+                render();
+            };
+
+            recognition.onerror = (event) => {
+                state.isRecording = false;
+                if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                    state.errorMessage = '❌ Microphone ditolak! Buka Settings > Site settings > Microphone > Allow';
+                } else if (event.error === 'no-speech') {
+                    state.errorMessage = '⚠️ Tidak ada suara terdeteksi. Coba lagi!';
+                } else {
+                    state.errorMessage = '❌ Error: ' + event.error;
+                }
+                render();
+            };
+
+            recognition.onend = () => {
+                state.isRecording = false;
+                render();
+            };
+
+            state.recognition = recognition;
+            return true;
+        }
+
+        // ========== MICROPHONE TEST ==========
+        async function testMicrophone() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                alert('✅ Microphone OK! Siap digunakan.');
+                state.errorMessage = '✅ Microphone OK!';
+                render();
+            } catch (error) {
+                alert('❌ Microphone ditolak! Ikuti panduan pada browser Anda.');
+                state.errorMessage = '❌ Microphone tidak dapat diakses!';
+                render();
+            }
+        }
+
+        // ========== START ASSESSMENT ==========
+        function handleStartAssessment() {
+            const name = document.getElementById('studentName').value.trim();
+            const className = document.getElementById('studentClass').value.trim();
+            const level = document.getElementById('difficultyLevel').value;
+
+            if (!name || !className || !level) {
+                alert('⚠️ Mohon isi Nama, Kelas, dan Level Kesulitan!');
+                return;
+            }
+
+            state.studentName = name;
+            state.studentClass = className;
+            state.difficultyLevel = level;
+            state.showForm = false;
+            missions = missionSets[level];
+
+            if (!initializeSpeechRecognition()) {
+                alert('❌ Browser tidak mendukung Speech Recognition!\nGunakan Chrome atau Edge.');
+            }
+
+            render();
+        }
+
+        // ========== SPEAK FUNCTION ==========
+        function speakText() {
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                state.isSpeaking = false;
+                render();
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(missions[state.currentMission]);
+                utterance.lang = 'en-US';
+                utterance.rate = 0.7;
+                utterance.onstart = () => { state.isSpeaking = true; render(); };
+                utterance.onend = () => { state.isSpeaking = false; render(); };
+                window.speechSynthesis.speak(utterance);
+            }, 100);
+        }
+
+        // ========== RECORD & SCORE ==========
+        function handleJudge() {
+            if (!state.recognition) {
+                alert('❌ Speech Recognition tidak tersedia!');
+                return;
+            }
+            state.transcript = '';
+            state.showResult = false;
+            state.recognition.start();
+        }
+
+        function calculateScore(original, spoken) {
+            if (!spoken) return 'Bad';
+            const normalize = (t) => t.toLowerCase().replace(/[.,!?'"]/g, '').replace(/\s+/g, ' ').trim();
+            const o = normalize(original).split(' ');
+            const s = normalize(spoken).split(' ');
+            let matches = 0;
+            o.forEach(word => { if (s.includes(word)) matches++; });
+            const accuracy = (matches / o.length) * 100;
+            if (accuracy >= 80) return 'Excellent';
+            if (accuracy >= 60) return 'Good';
+            if (accuracy >= 35) return 'Enough';
+            return 'Bad';
+        }
+
+        function handleResult() {
+            if (!state.transcript) {
+                alert('⚠️ Belum ada rekaman!');
+                return;
+            }
+            const score = calculateScore(missions[state.currentMission], state.transcript);
+            state.missionScores[state.currentMission] = score;
+            state.showResult = true;
+            render();
+        }
+
+        function handleNext() {
+            if (!state.missionScores[state.currentMission]) {
+                alert('⚠️ Selesaikan misi ini dulu!');
+                return;
+            }
+            if (state.currentMission < 6) {
+                state.currentMission++;
+                state.transcript = '';
+                state.showResult = false;
+                state.errorMessage = '';
+            } else {
+                state.showFinalScore = true;
+            }
+            render();
+        }
+
+        // ========== SCORING ==========
+        function calculateFinalScore() {
+            const values = { 'Excellent': 100, 'Good': 75, 'Enough': 50, 'Bad': 25 };
+            return Math.round(state.missionScores.reduce((a, s) => a + (values[s] || 0), 0) / 7);
+        }
+        function getFinalGrade(avg) {
+            if (avg >= 85) return 'Excellent';
+            if (avg >= 65) return 'Good';
+            if (avg >= 40) return 'Enough';
+            return 'Bad';
+        }
+        function getScoreColorLight(score) {
+            const colors = {
+                Excellent: 'text-green-700 bg-green-100 border-green-400',
+                Good: 'text-blue-700 bg-blue-100 border-blue-400',
+                Enough: 'text-yellow-700 bg-yellow-100 border-yellow-400',
+                Bad: 'text-red-700 bg-red-100 border-red-400'
+            };
+            return colors[score] || 'text-gray-700 bg-gray-100 border-gray-400';
+        }
+
+        // ========== RENDERING ==========
+        function renderForm() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                        <div class="text-center mb-6">
+                            <h1 class="text-2xl font-bold text-gray-800 mb-2">English Reading Assessment</h1>
+                            <p class="text-sm text-gray-600">Choose your level and start</p>
+                        </div>
+                        <div class="space-y-4 mb-6">
+                            <div><label class="block text-sm font-bold mb-2">👤 Name:</label>
+                                <input id="studentName" class="w-full px-4 py-3 border-2 rounded-lg" placeholder="Enter your name"/></div>
+                            <div><label class="block text-sm font-bold mb-2">🏫 Class:</label>
+                                <input id="studentClass" class="w-full px-4 py-3 border-2 rounded-lg" placeholder="e.g., 7A"/></div>
+                            <div><label class="block text-sm font-bold mb-2">🎯 Level:</label>
+                                <select id="difficultyLevel" class="w-full px-4 py-3 border-2 rounded-lg">
+                                    <option value="">-- Choose Level --</option>
+                                    <option value="beginner">Beginner</option>
+                                    <option value="intermediate">Intermediate</option>
+                                    <option value="advanced">Advanced</option>
+                                    <option value="expert">Expert</option>
+                                </select></div>
+                        </div>
+                        <button onclick="handleStartAssessment()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">
+                            🚀 Start Assessment
+                        </button>
+                    </div>
+                </div>`;
+        }
+
+        function render() {
+            const app = document.getElementById('app');
+            if (state.showForm) app.innerHTML = renderForm();
+            else if (state.showFinalScore) {
+                const avg = calculateFinalScore();
+                const grade = getFinalGrade(avg);
+                app.innerHTML = `
+                <div class="bg-white p-6 rounded-2xl shadow-2xl mt-10">
+                    <h2 class="text-3xl font-bold text-center mb-4">🏆 Final Result</h2>
+                    <p class="text-center mb-2 font-semibold">${state.studentName} - ${state.studentClass} (${state.difficultyLevel.toUpperCase()})</p>
+                    <div class="text-center text-5xl font-bold text-purple-600 mb-2">${avg}</div>
+                    <div class="text-center text-2xl font-bold border-2 inline-block px-4 py-2 rounded ${getScoreColorLight(grade)}">${grade}</div>
+                    <h3 class="mt-6 font-semibold text-lg mb-2">Mission Scores:</h3>
+                    ${state.missionScores.map((s,i)=>`
+                        <div class="flex justify-between mb-2 bg-gray-50 p-2 rounded">
+                            <span>Mission ${i+1}</span>
+                            <span class="font-bold border-2 px-3 py-1 rounded ${getScoreColorLight(s)}">${s}</span>
+                        </div>`).join('')}
+                    <button onclick="location.reload()" class="w-full bg-purple-600 text-white py-3 rounded-lg mt-4 font-bold hover:bg-purple-700">🔄 Start Again</button>
+                </div>`;
+            } else {
+                const currentScore = state.missionScores[state.currentMission];
+                app.innerHTML = `
+                <div class="bg-white p-6 rounded-2xl shadow-2xl">
+                    <div class="flex justify-between mb-4">
+                        <div><p class="font-bold">${state.studentName}</p><p class="text-sm text-gray-600">${state.studentClass}</p></div>
+                        <div class="text-sm font-bold capitalize">${state.difficultyLevel}</div>
+                    </div>
+                    <button onclick="testMicrophone()" class="w-full bg-green-600 text-white py-2 rounded-lg mb-3 font-bold">🎤 Test Microphone</button>
+                    ${state.errorMessage ? `<div class="text-center text-red-600 mb-2 font-bold">${state.errorMessage}</div>` : ''}
+                    <div class="p-4 bg-blue-50 border rounded-lg mb-4">
+                        <p class="font-bold mb-2">📖 Read this:</p>
+                        <p class="text-lg mb-2">"${missions[state.currentMission]}"</p>
+                        <button onclick="speakText()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">${state.isSpeaking ? 'Stop' : 'Listen 🔊'}</button>
+                    </div>
+                    ${state.isRecording ? `<div class="text-center text-red-600 font-bold animate-pulse">🎤 Recording...</div>` : ''}
+                    ${state.transcript ? `<div class="bg-green-50 border-2 border-green-400 p-3 mb-3 rounded"><p class="font-bold text-green-700 text-sm mb-1">Your Speech:</p><p>"${state.transcript}"</p></div>` : ''}
+                    ${state.showResult && currentScore ? `<div class="text-center text-3xl font-bold mb-3">${currentScore}</div>` : ''}
+                    <div class="grid grid-cols-3 gap-3">
+                        <button onclick="handleJudge()" class="bg-green-500 text-white py-3 rounded-lg font-bold">🎤 Judge</button>
+                        <button onclick="handleResult()" class="bg-blue-500 text-white py-3 rounded-lg font-bold">✓ Result</button>
+                        <button onclick="handleNext()" class="bg-purple-500 text-white py-3 rounded-lg font-bold">${state.currentMission<6?'Next':'Finish'}</button>
+                    </div>
+                </div>`;
+            }
+        }
+        render();
+    </script>
+</body>
+</html>
