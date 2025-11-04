@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Reading Assessment App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-500 to-purple-600 min-h-screen p-3">
+    <div id="app" class="max-w-4xl mx-auto"></div>
+
+    <script>
+        // State Management
+        let state = {
+            studentName: '',
+            studentClass: '',
+            showForm: true,
+            currentMission: 0,
+            missionScores: Array(7).fill(null),
+            showFinalScore: false,
+            isSpeaking: false,
+            isRecording: false,
+            transcript: '',
+            showResult: false,
+            recognition: null,
+            errorMessage: ''
+        };
+
+        // Missions
+        const missions = [
+            "I had an amazing experience during my trip to Bali",
+            "The view from the mountain top was absolutely breathtaking",
+            "We explored ancient temples and learned about local culture",
+            "Swimming in the crystal clear water was unforgettable",
+            "The traditional dance performance was truly spectacular",
+            "Meeting friendly locals made our journey more meaningful",
+            "This vacation created wonderful memories that will last forever"
+        ];
+
+        // Initialize Speech Recognition
+        function initializeSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+                state.errorMessage = '❌ Browser tidak mendukung Speech Recognition. Gunakan Chrome!';
+                return false;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                console.log('🎤 Recording started');
+                state.isRecording = true;
+                state.errorMessage = '';
+                render();
+            };
+
+            recognition.onresult = (event) => {
+                const spokenText = event.results[0][0].transcript;
+                console.log('✅ Recognized:', spokenText);
+                state.transcript = spokenText;
+                state.isRecording = false;
+                state.errorMessage = '';
+                render();
+            };
+
+            recognition.onerror = (event) => {
+                console.error('❌ Error:', event.error);
+                state.isRecording = false;
+                
+                if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                    state.errorMessage = '❌ Microphone ditolak! Buka Settings > Site settings > Microphone > Allow';
+                } else if (event.error === 'no-speech') {
+                    state.errorMessage = '⚠️ Tidak ada suara terdeteksi. Coba lagi dan bicara lebih keras!';
+                } else if (event.error === 'aborted') {
+                    state.errorMessage = '⚠️ Recording dibatalkan. Coba lagi!';
+                } else {
+                    state.errorMessage = '❌ Error: ' + event.error;
+                }
+                render();
+            };
+
+            recognition.onend = () => {
+                console.log('Recording ended');
+                state.isRecording = false;
+                render();
+            };
+
+            state.recognition = recognition;
+            return true;
+        }
+
+        // Test Microphone Function
+        async function testMicrophone() {
+            console.log('Testing microphone...');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                
+                alert('✅ MICROPHONE BERHASIL!\n\nSekarang Anda bisa:\n1. Klik LISTEN untuk mendengar\n2. Klik JUDGE untuk merekam\n3. Klik RESULT untuk nilai\n\nSilakan mulai!');
+                state.errorMessage = '✅ Microphone OK! Siap digunakan.';
+                render();
+            } catch (error) {
+                console.error('Microphone test failed:', error);
+                alert('❌ MICROPHONE TIDAK DAPAT DIAKSES!\n\nCara mengizinkan:\n\n📱 ANDROID:\n1. Tap 3 titik (⋮) pojok kanan atas\n2. Tap "Site settings"\n3. Tap "Microphone"\n4. Pilih "Allow"\n5. Refresh halaman (F5)\n6. Coba lagi\n\n💻 DESKTOP:\n1. Klik ikon kunci 🔒 di address bar\n2. Pilih Microphone > Allow\n3. Refresh halaman');
+                state.errorMessage = '❌ Microphone ditolak! Ikuti panduan di popup.';
+                render();
+            }
+        }
+
+        // Functions
+        function handleStartAssessment() {
+            const name = document.getElementById('studentName').value.trim();
+            const className = document.getElementById('studentClass').value.trim();
+            
+            if (!name || !className) {
+                alert('⚠️ Mohon isi Nama dan Kelas!');
+                return;
+            }
+            
+            state.studentName = name;
+            state.studentClass = className;
+            state.showForm = false;
+            
+            // Initialize speech recognition
+            if (!initializeSpeechRecognition()) {
+                alert('❌ Browser tidak mendukung Speech Recognition!\n\nGunakan Google Chrome atau Microsoft Edge.');
+            }
+            
+            render();
+        }
+
+        function speakText() {
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                state.isSpeaking = false;
+                render();
+                return;
+            }
+            
+            window.speechSynthesis.cancel();
+            
+            setTimeout(() => {
+                const utterance = new SpeechSynthesisUtterance(missions[state.currentMission]);
+                utterance.lang = 'en-US';
+                utterance.rate = 0.6;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                
+                utterance.onstart = () => {
+                    state.isSpeaking = true;
+                    render();
+                };
+                utterance.onend = () => {
+                    state.isSpeaking = false;
+                    render();
+                };
+                utterance.onerror = () => {
+                    state.isSpeaking = false;
+                    render();
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            }, 100);
+        }
+
+        function handleJudge() {
+            if (!state.recognition) {
+                alert('❌ Speech Recognition tidak tersedia!\n\nPastikan:\n1. Menggunakan Chrome/Edge\n2. Microphone sudah diizinkan\n3. Refresh halaman jika perlu');
+                return;
+            }
+
+            console.log('🎤 Starting Judge...');
+            state.transcript = '';
+            state.showResult = false;
+            state.errorMessage = '';
+            
+            try {
+                state.recognition.start();
+            } catch (error) {
+                console.error('Start error:', error);
+                if (error.message && error.message.includes('already started')) {
+                    state.recognition.stop();
+                    setTimeout(() => {
+                        try {
+                            state.recognition.start();
+                        } catch (e) {
+                            console.error('Retry failed:', e);
+                            state.errorMessage = '❌ Gagal memulai recording. Refresh halaman!';
+                            render();
+                        }
+                    }, 500);
+                } else {
+                    state.errorMessage = '❌ Gagal memulai recording: ' + error.message;
+                    render();
+                }
+            }
+        }
+
+        function calculateScore(original, spoken) {
+            if (!spoken || spoken.trim() === '') return 'Bad';
+
+            const normalize = (text) => text.toLowerCase().replace(/[.,!?'"]/g, '').replace(/\s+/g, ' ').trim();
+            const originalWords = normalize(original).split(' ');
+            const spokenWords = normalize(spoken).split(' ');
+            
+            let matches = 0;
+            originalWords.forEach(word => {
+                if (spokenWords.includes(word)) matches++;
+            });
+
+            const accuracy = (matches / originalWords.length) * 100;
+            console.log(`Accuracy: ${accuracy.toFixed(1)}% (${matches}/${originalWords.length})`);
+
+            if (accuracy >= 80) return 'Excellent';
+            if (accuracy >= 60) return 'Good';
+            if (accuracy >= 35) return 'Enough';
+            return 'Bad';
+        }
+
+        function handleResult() {
+            console.log('Result clicked, transcript:', state.transcript);
+            
+            if (!state.transcript || state.transcript.trim() === '') {
+                alert('⚠️ BELUM ADA REKAMAN!\n\nLangkah:\n1. Klik JUDGE\n2. Baca kalimat dengan jelas\n3. Tunggu teks muncul\n4. Klik RESULT');
+                return;
+            }
+
+            const score = calculateScore(missions[state.currentMission], state.transcript);
+            console.log('Calculated score:', score);
+            
+            state.missionScores[state.currentMission] = score;
+            state.showResult = true;
+            render();
+        }
+
+        function handleNext() {
+            if (!state.missionScores[state.currentMission]) {
+                alert('⚠️ Selesaikan misi ini dulu!\nKlik RESULT untuk mendapat nilai.');
+                return;
+            }
+
+            if (state.currentMission < 6) {
+                state.currentMission++;
+                state.transcript = '';
+                state.showResult = false;
+                state.errorMessage = '';
+            } else {
+                state.showFinalScore = true;
+            }
+            render();
+        }
+
+        function calculateFinalScore() {
+            const scoreValues = { 'Excellent': 100, 'Good': 75, 'Enough': 50, 'Bad': 25 };
+            return Math.round(state.missionScores.reduce((sum, score) => sum + (scoreValues[score] || 0), 0) / 7);
+        }
+
+        function getFinalGrade(avgScore) {
+            if (avgScore >= 85) return 'Excellent';
+            if (avgScore >= 65) return 'Good';
+            if (avgScore >= 40) return 'Enough';
+            return 'Bad';
+        }
+
+        function getScoreColor(score) {
+            const colors = {
+                'Excellent': 'bg-green-500 text-white border-green-600',
+                'Good': 'bg-blue-500 text-white border-blue-600',
+                'Enough': 'bg-yellow-500 text-white border-yellow-600',
+                'Bad': 'bg-red-500 text-white border-red-600'
+            };
+            return colors[score] || 'bg-gray-500 text-white border-gray-600';
+        }
+
+        function getScoreColorLight(score) {
+            const colors = {
+                'Excellent': 'text-green-700 bg-green-100 border-green-400',
+                'Good': 'text-blue-700 bg-blue-100 border-blue-400',
+                'Enough': 'text-yellow-700 bg-yellow-100 border-yellow-400',
+                'Bad': 'text-red-700 bg-red-100 border-red-400'
+            };
+            return colors[score] || 'text-gray-700 bg-gray-100 border-gray-400';
+        }
+
+        function restartApp() {
+            state = {
+                studentName: '',
+                studentClass: '',
+                showForm: true,
+                currentMission: 0,
+                missionScores: Array(7).fill(null),
+                showFinalScore: false,
+                isSpeaking: false,
+                isRecording: false,
+                transcript: '',
+                showResult: false,
+                recognition: null,
+                errorMessage: ''
+            };
+            render();
+        }
+
+        // Render Functions
+        function renderForm() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                        <div class="text-center mb-6">
+                            <div class="text-6xl mb-3">📚</div>
+                            <h1 class="text-2xl font-bold text-gray-800 mb-2">English Reading Assessment</h1>
+                            <p class="text-sm text-gray-600">Chapter 2: Taking Trips - Unit 2: What an Experience</p>
+                        </div>
+
+                        <div class="space-y-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-2">
+                                    👤 Student Name / Nama Siswa:
+                                </label>
+                                <input
+                                    type="text"
+                                    id="studentName"
+                                    placeholder="Enter your name"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-base"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-bold text-gray-700 mb-2">
+                                    🏫 Class / Kelas:
+                                </label>
+                                <input
+                                    type="text"
+                                    id="studentClass"
+                                    placeholder="e.g., 7A, 8B, IX-1"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-base"
+                                />
+                            </div>
+                        </div>
+
+                        <button
+                            onclick="handleStartAssessment()"
+                            class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-lg font-bold text-lg hover:from-blue-600 hover:to-purple-700 shadow-lg transform hover:scale-105 transition">
+                            🚀 Start Assessment
+                        </button>
+
+                        <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                            <p class="text-xs text-blue-800 text-center">
+                                <strong>⚠️ REQUIREMENTS:</strong><br/>
+                                • Use Chrome or Edge browser<br/>
+                                • Allow microphone access<br/>
+                                • Stable internet connection
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFinalScore() {
+            const finalScore = calculateFinalScore();
+            const finalGrade = getFinalGrade(finalScore);
+
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-2xl w-full">
+                        <div class="text-center mb-6">
+                            <div class="text-6xl mb-3">🏆</div>
+                            <h1 class="text-3xl font-bold text-gray-800 mb-1">Assessment Complete!</h1>
+                            <p class="text-gray-600">All missions completed</p>
+                        </div>
+
+                        <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-5 mb-4 border-2 border-blue-300">
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <div class="text-center border-r border-blue-300 pr-3">
+                                    <p class="text-xs text-gray-500 font-bold mb-2 uppercase">Student Name</p>
+                                    <p class="text-lg font-black text-gray-800">${state.studentName}</p>
+                                </div>
+                                <div class="text-center pl-3">
+                                    <p class="text-xs text-gray-500 font-bold mb-2 uppercase">Class</p>
+                                    <p class="text-lg font-black text-gray-800">${state.studentClass}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl p-6 mb-5">
+                            <h2 class="text-xl font-semibold text-center mb-3">Final Score</h2>
+                            <div class="text-5xl font-bold text-center text-purple-600 mb-2">${finalScore}</div>
+                            <div class="text-2xl font-bold text-center py-3 px-4 rounded-lg border-2 ${getScoreColorLight(finalGrade)}">
+                                ${finalGrade}
+                            </div>
+                        </div>
+
+                        <div class="space-y-2 mb-5">
+                            <h3 class="font-semibold text-gray-700 mb-2">Score per Mission:</h3>
+                            ${state.missionScores.map((score, idx) => `
+                                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                                    <span class="text-gray-700 font-medium">Mission ${idx + 1}</span>
+                                    <span class="font-bold px-4 py-1 rounded border-2 ${getScoreColorLight(score)}">
+                                        ${score}
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <button
+                            onclick="restartApp()"
+                            class="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-lg font-bold hover:from-purple-600 hover:to-pink-600 text-lg shadow-lg">
+                            🔄 Start New Assessment
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderMainApp() {
+            const currentScore = state.missionScores[state.currentMission];
+            
+            return `
+                <!-- Student Info -->
+                <div class="bg-white rounded-xl p-4 mb-3 shadow-lg border-2 border-blue-300">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="border-r border-gray-300 pr-3">
+                            <p class="text-xs text-gray-500 font-semibold mb-1 uppercase">Student Name</p>
+                            <p class="text-base text-gray-800 font-bold truncate">${state.studentName}</p>
+                        </div>
+                        <div class="pl-3">
+                            <p class="text-xs text-gray-500 font-semibold mb-1 uppercase">Class</p>
+                            <p class="text-base text-gray-800 font-bold">${state.studentClass}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Test Microphone Button -->
+                <button
+                    onclick="testMicrophone()"
+                    class="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white py-3 px-4 rounded-xl font-black text-base hover:from-green-600 hover:to-blue-600 mb-3 shadow-lg flex items-center justify-center gap-2">
+                    <span class="text-2xl">🎤</span>
+                    TEST MICROPHONE (KLIK INI DULU!)
+                </button>
+
+                <!-- Error Message -->
+                ${state.errorMessage ? `
+                    <div class="bg-red-50 border-2 border-red-400 rounded-xl p-3 mb-3">
+                        <p class="text-red-800 font-bold text-sm text-center">${state.errorMessage}</p>
+                    </div>
+                ` : ''}
+
+                <div class="bg-white rounded-2xl shadow-2xl p-5">
+                    <!-- Header -->
+                    <div class="text-center mb-4">
+                        <h1 class="text-xl font-bold text-gray-800 mb-1">📚 English Reading Test</h1>
+                        <p class="text-xs text-gray-600 font-semibold">Chapter 2: Taking Trips - Unit 2</p>
+                        <p class="text-lg text-gray-800 font-bold mt-2">Mission ${state.currentMission + 1} of 7</p>
+                        <div class="w-full bg-gray-200 rounded-full h-3 mt-2">
+                            <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all" style="width: ${((state.currentMission + 1) / 7) * 100}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Mission Text -->
+                    <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4 mb-4 border-2 border-blue-300">
+                        <div class="flex justify-between items-start mb-3">
+                            <h2 class="text-sm font-bold text-gray-800">📖 Read this:</h2>
+                            <button onclick="speakText()" class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm shadow-lg transition ${state.isSpeaking ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}">
+                                🔊 ${state.isSpeaking ? 'STOP' : 'LISTEN'}
+                            </button>
+                        </div>
+                        <p class="text-lg text-gray-800 leading-relaxed font-semibold">"${missions[state.currentMission]}"</p>
+                    </div>
+
+                    <!-- Recording Status -->
+                    ${state.isRecording ? `
+                        <div class="bg-red-50 border-2 border-red-500 rounded-xl p-4 mb-4 text-center animate-pulse">
+                            <div class="text-5xl mb-2">🎤</div>
+                            <p class="text-red-800 font-black text-lg">RECORDING...</p>
+                            <p class="text-red-600 font-bold text-sm">Speak clearly now!</p>
+                        </div>
+                    ` : ''}
+
+                    <!-- Transcript -->
+                    ${state.transcript ? `
+                        <div class="bg-green-50 border-2 border-green-500 rounded-xl p-4 mb-4">
+                            <p class="text-xs text-green-700 font-bold mb-2">✅ YOUR RECORDING:</p>
+                            <p class="text-base text-gray-800 font-semibold italic">"${state.transcript}"</p>
+                            <p class="text-xs text-green-600 mt-2 font-bold">👉 Click RESULT to get score</p>
+                        </div>
+                    ` : ''}
+
+                    <!-- Score Display -->
+                    ${state.showResult && currentScore ? `
+                        <div class="rounded-xl p-5 mb-4 text-center border-4 shadow-xl ${getScoreColor(currentScore)}">
+                            <div class="text-5xl mb-2">✓</div>
+                            <p class="text-sm font-bold mb-1">YOUR SCORE:</p>
+                            <p class="text-4xl font-black mb-2">${currentScore}</p>
+                        </div>
+                    ` : ''}
+
+                    <!-- Action Buttons -->
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <button onclick="handleJudge()" ${state.isRecording ? 'disabled' : ''} class="bg-green-500 text-white py-4 rounded-xl font-black text-sm hover:bg-green-600 disabled:bg-gray-400 shadow-lg">
+                            <div class="text-2xl mb-1">🎤</div>
+                            JUDGE
+                        </button>
+                        
+                        <button onclick="handleResult()" ${!state.transcript || state.isRecording ? 'disabled' : ''} class="bg-blue-500 text-white py-4 rounded-xl font-black text-sm hover:bg-blue-600 disabled:bg-gray-400 shadow-lg">
+                            <div class="text-2xl mb-1">✓</div>
+                            RESULT
+                        </button>
+                        
+                        <button onclick="handleNext()" ${!currentScore ? 'disabled' : ''} class="bg-purple-500 text-white py-4 rounded-xl font-black text-sm hover:bg-purple-600 disabled:bg-gray-400 shadow-lg">
+                            <div class="text-2xl mb-1">→</div>
+                            ${state.currentMission < 6 ? 'NEXT' : 'FINISH'}
+                        </button>
+                    </div>
+
+                    <!-- Progress -->
+                    <div class="flex justify-center gap-2 flex-wrap">
+                        ${missions.map((_, idx) => `
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${state.missionScores[idx] ? 'bg-green-500 text-white' : idx === state.currentMission ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-600'}">
+                                ${idx + 1}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="bg-white rounded-xl p-4 mt-3">
+                    <h3 class="font-bold text-gray-800 mb-2">📋 STEPS:</h3>
+                    <ol class="list-decimal list-inside text-sm text-gray-700 space-y-1">
+                        <li>Click <strong class="text-blue-600">LISTEN</strong> to hear pronunciation</li>
+                        <li>Click <strong class="text-green-600">JUDGE</strong> to start recording</li>
+                        <li><strong>Read the sentence</strong> clearly and loudly</li>
+                        <li>Wait for text to appear (green box)</li>
+                        <li>Click <strong class="text-blue-600">RESULT</strong> to see your score</li>
+                        <li>Click <strong class="text-purple-600">NEXT</strong> for next mission</li>
+                    </ol>
+                </div>
+            `;
+        }
+
+        function render() {
+            const app = document.getElementById('app');
+            if (state.showForm) {
+                app.innerHTML = renderForm();
+            } else if (state.showFinalScore) {
+                app.innerHTML = renderFinalScore();
+            } else {
+                app.innerHTML = renderMainApp();
+            }
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
